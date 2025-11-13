@@ -7,6 +7,22 @@ const logFile = path.join(__dirname, "app.log");
 
 let tray = null;
 let serverProcess = null;
+const iconPath = {
+  active: path.join(__dirname, 'assets/play.ico'),
+  inactive: path.join(__dirname, 'assets/pause.ico'),
+  default: path.join(__dirname, 'assets/stop.ico')
+};
+
+// Create default icons if they don't exist
+function ensureIconsExist() {
+  const defaultIcon = path.join(__dirname, 'assets/stop.ico');
+  if (!fs.existsSync(iconPath.active)) {
+    fs.copyFileSync(defaultIcon, iconPath.active);
+  }
+  if (!fs.existsSync(iconPath.inactive)) {
+    fs.copyFileSync(defaultIcon, iconPath.inactive);
+  }
+}
 
 ipcMain.on("save-delay", (event, val) => {
   if (!isNaN(val)) {
@@ -32,8 +48,11 @@ function saveConfig(cfg) {
 }
 
 app.whenReady().then(() => {
-  const iconPath = path.join(__dirname, "icon.ico"); // optional
-  tray = new Tray(iconPath);
+  ensureIconsExist();
+  
+  // Start with inactive icon
+  tray = new Tray(iconPath.default);
+  updateTrayIcon(false);
   writeLog("System ready.");
 
   const contextMenu = Menu.buildFromTemplate([
@@ -85,7 +104,10 @@ function startServer() {
   const cfg = loadConfig();
 
   const exePath = path.join(__dirname, "api-queue-server.exe");
-
+  
+  // Update icon to active state
+  updateTrayIcon(true);
+  
   serverProcess = spawn(exePath, [cfg.delay], { detached: false });
 
   serverProcess.stdout.on("data", (data) => {
@@ -101,6 +123,8 @@ function startServer() {
   serverProcess.on("exit", () => {
     writeLog("Server stopped");
     serverProcess = null;
+    // Update icon to inactive state
+    updateTrayIcon(false);
   });
 
   console.log("Server started with delay:", cfg.delay);
@@ -113,6 +137,8 @@ function stopServer() {
     serverProcess = null;
     console.log("Server stopped!");
     writeLog("Server stopped!");
+    // Update icon to inactive state
+    updateTrayIcon(false);
   }
 }
 
@@ -120,6 +146,16 @@ function writeLog(message) {
   const timestamp = new Date().toISOString();
   fs.appendFileSync(logFile, `[${timestamp}] ${message}\n`);
   console.log(message); // still show in console if open
+}
+
+function updateTrayIcon(isRunning) {
+  if (tray) {
+    const icon = isRunning ? iconPath.active : iconPath.inactive;
+    tray.setImage(icon);
+    
+    // Update tooltip based on status
+    tray.setToolTip(`API Queue Server - ${isRunning ? 'Running' : 'Stopped'}`);
+  }
 }
 
 app.on("window-all-closed", (e) => e.preventDefault()); // keep tray running
